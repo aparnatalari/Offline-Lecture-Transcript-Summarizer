@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Offline Lecture Transcript Summarizer</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap');
+
+body {
+    font-family: 'Poppins', sans-serif;
+    background: linear-gradient(135deg, #ff9a9e, #fad0c4, #a18cd1, #fbc2eb);
+    background-size: 400% 400%;
+    animation: gradientBG 10s ease infinite;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 25px;
+    min-height: 100vh;
+    color: #222;
+}
+
+@keyframes gradientBG {
+    0% {background-position: 0% 50%;}
+    50% {background-position: 100% 50%;}
+    100% {background-position: 0% 50%;}
+}
+
+h1 {
+    color: #fff;
+    background: rgba(0,0,0,0.3);
+    padding: 15px 35px;
+    border-radius: 35px;
+    box-shadow: 0 6px 12px rgba(0,0,0,0.2);
+    font-size: 28px;
+    margin-bottom: 20px;
+}
+
+textarea, input[type="text"] {
+    width: 85%;
+    padding: 12px;
+    margin: 12px 0;
+    font-size: 16px;
+    border: 2px solid #ddd;
+    border-radius: 10px;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    transition: all 0.3s;
+    background: #fff;
+}
+textarea:focus {
+    border-color: #8E24AA;
+    box-shadow: 0 0 12px rgba(142,36,170,0.4);
+    outline: none;
+}
+
+input[type="file"] {
+    margin: 12px 0;
+    background: #fff;
+    padding: 10px;
+    border-radius: 10px;
+    box-shadow: 0 3px 8px rgba(0,0,0,0.1);
+}
+
+button {
+    padding: 12px 20px;
+    font-size: 16px;
+    cursor: pointer;
+    border: none;
+    border-radius: 25px;
+    color: white;
+    background: linear-gradient(45deg, #ff6f91, #ff9671, #ffc75f);
+    transition: 0.3s;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+}
+button:hover {
+    transform: scale(1.07);
+    box-shadow: 0 6px 15px rgba(0,0,0,0.3);
+}
+
+#summary {
+    width: 85%;
+    min-height: 200px;
+    padding: 15px;
+    margin-top: 20px;
+    background: rgba(255,255,255,0.95);
+    border-radius: 15px;
+    box-shadow: 0 6px 15px rgba(0,0,0,0.2);
+    border-left: 6px solid #8E24AA;
+    overflow-wrap: break-word;
+    transition: all 0.4s;
+}
+#summary h2 {
+    color: #8E24AA;
+    text-align: center;
+}
+.bold { font-weight: bold; }
+.button-row {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-bottom: 15px;
+}
+
+/* Loading spinner */
+#loading {
+    display: none;
+    margin-top: 10px;
+    color: #fff;
+    font-weight: bold;
+    background: rgba(0,0,0,0.4);
+    padding: 8px 16px;
+    border-radius: 10px;
+    animation: pulse 1.5s infinite;
+}
+@keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.6; }
+    100% { opacity: 1; }
+}
+</style>
+</head>
+<body>
+
+<h1>Offline Lecture Transcript Summarizer</h1>
+
+<textarea id="transcript" placeholder="Paste your lecture transcript here..."></textarea><br>
+<input type="file" id="fileInput" accept=".txt,.pdf"><br>
+
+<div id="loading">Processing file, please wait...</div>
+
+<div class="button-row">
+    <button onclick="summarizeText()">Summarize</button>
+    <button onclick="downloadSummary()">Download</button>
+    <button onclick="shareSummary()">Share</button>
+    <button onclick="copySummary()">Copy</button>
+    <button onclick="clearAll()">Clear All</button>
+</div>
+
+<div id="summary"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+
+<script>
+// File upload + Auto summarize
+document.getElementById('fileInput').addEventListener('change', function(e){
+    const file = e.target.files[0];
+    if (!file) return;
+    const transcriptArea = document.getElementById('transcript');
+    const loadingDiv = document.getElementById('loading');
+    loadingDiv.style.display = "block";
+
+    if (file.type === "text/plain") {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            transcriptArea.value = e.target.result;
+            loadingDiv.style.display = "none";
+            summarizeText();
+        }
+        reader.readAsText(file);
+    } else if (file.type === "application/pdf") {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const typedarray = new Uint8Array(e.target.result);
+            pdfjsLib.getDocument({ data: typedarray }).promise.then(pdf => {
+                let textContent = [];
+                let promises = [];
+
+                for (let i = 1; i <= pdf.numPages; i++) {
+                    promises.push(
+                        pdf.getPage(i).then(page => {
+                            return page.getTextContent().then(content => {
+                                const text = content.items.map(item => item.str).join(' ');
+                                textContent.push(text);
+                            });
+                        })
+                    );
+                }
+
+                Promise.all(promises).then(() => {
+                    const fullText = textContent.join(' ');
+                    transcriptArea.value = fullText;
+                    loadingDiv.style.display = "none";
+                    summarizeText();
+                });
+            });
+        };
+        reader.readAsArrayBuffer(file);
+    } else {
+        alert("Unsupported file type!");
+        loadingDiv.style.display = "none";
+    }
+});
+
+// Generate heading
+function generateHeading(text) {
+    const stopWords = ["the","and","for","with","that","this","from","are","was","were","but","not","you","your","will","have","has","had","their","they","them","on","in","of","a","an","to","is","as","at","by"];
+    const words = text.toLowerCase().split(/\W+/).filter(w=> w.length>3 && !stopWords.includes(w));
+    const freq = {};
+    words.forEach(w=> freq[w]=(freq[w]||0)+1);
+    const sorted = Object.keys(freq).sort((a,b)=> freq[b]-freq[a]);
+    const topWords = sorted.slice(0,4).map(w=> w.charAt(0).toUpperCase()+w.slice(1));
+    return topWords.join(" ");
+}
+
+// Summarize
+function summarizeText() {
+    const transcript = document.getElementById('transcript').value;
+    const summaryDiv = document.getElementById('summary');
+    if (!transcript.trim()) { 
+        summaryDiv.innerHTML = "<p style='color:red;'>Please upload or paste a valid transcript.</p>"; 
+        return; 
+    }
+
+    const title = generateHeading(transcript) || "Lecture Summary";
+    const sentences = transcript.match(/[^\.!\?]+[\.!\?]+/g) || [];
+    if (sentences.length === 0) { 
+        summaryDiv.innerText = transcript; 
+        return; 
+    }
+
+    const words = transcript.toLowerCase().split(/\W+/);
+    const freq = {};
+    words.forEach(w => { if(w.length>3) freq[w]=(freq[w]||0)+1; });
+
+    const scored = sentences.map(s => {
+        const score = s.toLowerCase().split(/\W+/).reduce((acc,w)=> acc+(freq[w]||0),0);
+        return {sentence: s, score};
+    });
+    scored.sort((a,b)=>b.score-a.score);
+
+    const topSentences = scored.slice(0, Math.min(7, scored.length));
+
+    summaryDiv.innerHTML = `<h2>${title}</h2><ul>`;
+    topSentences.forEach(s=>{
+        summaryDiv.innerHTML += `<li class="bold">${s.sentence.trim()}</li>`;
+    });
+    summaryDiv.innerHTML += "</ul>";
+}
+
+// Download Summary
+function downloadSummary() {
+    const summary = document.getElementById('summary').innerText;
+    if (!summary) { alert("No summary to download!"); return; }
+    const blob = new Blob([summary], {type: "text/plain"});
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = "summary.txt";
+    link.click();
+}
+
+// Share via Email
+function shareSummary() {
+    const summary = document.getElementById('summary').innerText;
+    if (!summary) { alert("No summary to share!"); return; }
+    const subject = encodeURIComponent(summary.split('\n')[0] || "Lecture Summary");
+    const body = encodeURIComponent(summary);
+    window.location.href = `mailto:?subject=${subject}&body=${body}`;
+}
+
+// Copy Summary
+function copySummary() {
+    const summary = document.getElementById('summary').innerText;
+    if (!summary) { alert("No summary to copy!"); return; }
+    navigator.clipboard.writeText(summary).then(()=> alert("Summary copied!"));
+}
+
+// Clear All
+function clearAll() {
+    document.getElementById('transcript').value = "";
+    document.getElementById('summary').innerHTML = "";
+    document.getElementById('fileInput').value = "";
+}
+</script>
+
+</body>
+</html>
